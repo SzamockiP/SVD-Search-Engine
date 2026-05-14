@@ -23,8 +23,8 @@ def preprocess_text(text):
 
 def build_index():
     print("Loading dataset from HuggingFace...")
-    # Task 1: Prepare a large dataset (> 1000 items) in English
-    dataset = load_dataset("wikipedia", "20220301.simple", split="train[:10000]")
+    # Task 1: Prepare a dataset
+    dataset = load_dataset("wikipedia", "20220301.simple", split="train")
     
     docs = []
     metadata = []
