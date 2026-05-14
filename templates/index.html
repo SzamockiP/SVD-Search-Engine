@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MOWNiT Lab 6: SVD search engine</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f8f9fa;
+        }
+        .search-container {
+            margin-top: 30px;
+            margin-bottom: 20px;
+        }
+        .result-card {
+            margin-bottom: 10px;
+        }
+        .similarity-badge {
+            font-size: 0.85rem;
+        }
+        .settings-panel {
+            background-color: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid px-4">
+        <!-- Task 9: Compare the search program without noise removal and with noise removal. -->
+        <div class="row justify-content-center search-container">
+            <div class="col-md-8 text-center">
+                <h2 class="text-primary">MOWNiT Lab 6: SVD search engine</h2>
+                <div class="input-group input-group-lg shadow-sm mt-3">
+                    <input type="text" id="searchInput" class="form-control" placeholder="Search...">
+                    <button class="btn btn-primary" type="button" id="searchButton" onclick="performSearch()">Search and Compare</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="loadingIndicator" class="text-center d-none mb-3">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+        </div>
+
+        <div class="row">
+            <!-- Left column -->
+            <div class="col-md-6">
+                <div class="settings-panel border-start border-4 border-secondary">
+                    <h5>Left Model</h5>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="l_idf">
+                        <label class="form-check-label" for="l_idf">IDF</label>
+                    </div>
+                    <div class="form-check form-switch mt-2">
+                        <input class="form-check-input" type="checkbox" id="l_svd" onchange="toggleSlider('l_k_container', this.checked)">
+                        <label class="form-check-label" for="l_svd">SVD</label>
+                    </div>
+                    <div class="mt-2 d-none" id="l_k_container">
+                        <label for="l_k" class="form-label">Dimension k:</label>
+                        <input type="number" class="form-control" min="1" max="300" step="1" id="l_k" value="50">
+                    </div>
+                </div>
+                <div id="leftResultsContainer"></div>
+            </div>
+
+            <!-- Right column -->
+            <div class="col-md-6">
+                <div class="settings-panel border-start border-4 border-primary">
+                    <h5>Right Model</h5>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="r_idf" checked>
+                        <label class="form-check-label" for="r_idf">IDF</label>
+                    </div>
+                    <div class="form-check form-switch mt-2">
+                        <input class="form-check-input" type="checkbox" id="r_svd" checked onchange="toggleSlider('r_k_container', this.checked)">
+                        <label class="form-check-label" for="r_svd">SVD</label>
+                    </div>
+                    <div class="mt-2" id="r_k_container">
+                        <label for="r_k" class="form-label">Dimension k:</label>
+                        <input type="number" class="form-control" min="1" max="300" step="1" id="r_k" value="50">
+                    </div>
+                </div>
+                <div id="rightResultsContainer"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function toggleSlider(containerId, isChecked) {
+            const container = document.getElementById(containerId);
+            if (isChecked) {
+                container.classList.remove('d-none');
+            } else {
+                container.classList.add('d-none');
+            }
+        }
+
+        const searchInput = document.getElementById('searchInput');
+        searchInput.addEventListener("keypress", function(event) {
+            if (event.key === "Enter") {
+                event.preventDefault();
+                performSearch();
+            }
+        });
+
+        function renderResults(results, containerId) {
+            const container = document.getElementById(containerId);
+            container.innerHTML = '';
+
+            if (!results || results.length === 0) {
+                container.innerHTML = `<div class="alert alert-warning">No results or zero cosine similarity.</div>`;
+                return;
+            }
+
+            results.forEach((result, idx) => {
+                const simPercent = (result.similarity * 100).toFixed(2);
+                let badgeClass = 'bg-primary';
+                if (result.similarity < 0.3) badgeClass = 'bg-warning text-dark';
+                if (result.similarity < 0.1) badgeClass = 'bg-danger';
+
+                const wikiUrl = `https://simple.wikipedia.org/wiki/${encodeURIComponent(result.title.replace(/ /g, '_'))}`;
+
+                const card = document.createElement('a');
+                card.href = wikiUrl;
+                card.target = '_blank';
+                card.className = 'card result-card shadow-sm text-decoration-none text-dark';
+                card.innerHTML = `
+                    <div class="card-body py-2">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <h6 class="card-title text-primary mb-1">#${idx+1} ${result.title}</h6>
+                            <span class="badge ${badgeClass} similarity-badge">Cosine similarity: ${simPercent}%</span>
+                        </div>
+                        <p class="card-text text-muted small mb-0">${result.snippet}</p>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        async function performSearch() {
+            const query = searchInput.value.trim();
+            if (!query) return;
+
+            const loadingIndicator = document.getElementById('loadingIndicator');
+            loadingIndicator.classList.remove('d-none');
+            
+            document.getElementById('leftResultsContainer').innerHTML = '';
+            document.getElementById('rightResultsContainer').innerHTML = '';
+
+            // Gathering parameters
+            const params = new URLSearchParams({
+                q: query,
+                l_idf: document.getElementById('l_idf').checked,
+                l_svd: document.getElementById('l_svd').checked,
+                l_k: document.getElementById('l_k').value,
+                r_idf: document.getElementById('r_idf').checked,
+                r_svd: document.getElementById('r_svd').checked,
+                r_k: document.getElementById('r_k').value
+            });
+
+            try {
+                const response = await fetch(`/search?${params.toString()}`);
+                const data = await response.json();
+                loadingIndicator.classList.add('d-none');
+
+                if (data.error) {
+                    alert(data.error);
+                    return;
+                }
+
+                renderResults(data.left, 'leftResultsContainer');
+                renderResults(data.right, 'rightResultsContainer');
+
+            } catch (error) {
+                loadingIndicator.classList.add('d-none');
+                alert("An error occurred while communicating with the server.");
+                console.error("Error:", error);
+            }
+        }
+    </script>
+</body>
+</html>
